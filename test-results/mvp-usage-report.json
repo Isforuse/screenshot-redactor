@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-09-04T19:00:57.228Z",
+  "reports": [
+    {
+      "sample": "crm",
+      "recognitionSuccessRate": "93%",
+      "redactionSuccessRate": "100%",
+      "precision": "100%",
+      "detections": 8
+    },
+    {
+      "sample": "settings",
+      "recognitionSuccessRate": "100%",
+      "redactionSuccessRate": "100%",
+      "precision": "100%",
+      "detections": 4
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Money Recorder">
+  <rect width="512" height="512" rx="96" fill="#14532d"/>
+  <path d="M136 168h240a32 32 0 0 1 32 32v152a32 32 0 0 1-32 32H136a32 32 0 0 1-32-32V200a32 32 0 0 1 32-32Z" fill="#ecfdf5"/>
+  <path d="M152 232h208M152 280h128M152 328h176" stroke="#14532d" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="352" cy="292" r="42" fill="#22c55e"/>
+</svg>

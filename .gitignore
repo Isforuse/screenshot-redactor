@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+playwright-report
+test-results
+!test-results/
+test-results/*
+!test-results/mvp-usage-report.json
+!test-results/crm-redacted.png
+!test-results/settings-redacted.png
+.env
+.env.*
+!.env.example
+*.local
+*.tsbuildinfo

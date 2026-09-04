@@ -1,0 +1,17 @@
+{
+  "name": "Money Recorder",
+  "short_name": "Money",
+  "description": "Personal mobile money recorder",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#14532d",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

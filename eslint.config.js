@@ -5,7 +5,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default [
-  { ignores: ["dist", "node_modules", "coverage"] },
+  { ignores: ["dist", "release", "node_modules", "coverage"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -44,6 +44,19 @@ export default [
       globals: {
         ...globals.node
       }
+    }
+  },
+  {
+    files: ["electron/**/*.cjs"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        require: "readonly",
+        __dirname: "readonly"
+      }
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off"
     }
   }
 ];

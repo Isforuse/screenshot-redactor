@@ -15,6 +15,24 @@ This branch implements the browser-based core before native Windows capture and 
 
 The current MVP intentionally keeps the OCR engine replaceable. The next implementation step is to connect a real OCR adapter, then add native screenshot capture and clipboard output in an isolated desktop shell.
 
+## Windows Desktop Build
+
+The MVP can be packaged as an Electron desktop app:
+
+```bash
+npm run postinstall:electron
+npm run build:desktop
+npm run smoke:desktop
+```
+
+The generated Windows executable is:
+
+```text
+release/win-unpacked/Screenshot Redactor.exe
+```
+
+`release/` is intentionally ignored by Git because the desktop runtime is large. Rebuild it locally from the committed source and lockfile.
+
 ## Practical Test Evidence
 
 The Playwright usage test opens the app, clicks the redaction action, verifies visible metrics, and captures the redacted output images.
@@ -50,6 +68,9 @@ Browser usage tests run through Playwright with an isolated browser profile and 
 npm install
 npm run dev
 npm run build
+npm run postinstall:electron
+npm run build:desktop
+npm run smoke:desktop
 npm run test
 npm run test:e2e
 ```

@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
+    "build:desktop": "npm run build && node scripts/package-desktop.mjs",
+    "postinstall:electron": "node node_modules/electron/install.js",
+    "smoke:desktop": "node scripts/desktop-smoke.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "eslint .",
     "test": "vitest run",
@@ -26,6 +29,25 @@
     "typescript": "^5.9.3",
     "vite": "^8.2.0"
   },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "tw.local.screenshot-redactor",
+    "productName": "Screenshot Redactor",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
@@ -35,6 +57,7 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "electron": "^44.2.0",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",

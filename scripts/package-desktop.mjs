@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = process.cwd();
@@ -25,6 +25,31 @@ rmSync(join(output, "electron.exe"), { force: true });
 
 cpSync(join(root, "dist"), join(appOutput, "dist"), { recursive: true });
 cpSync(join(root, "electron"), join(appOutput, "electron"), { recursive: true });
+cpSync(join(root, "assets"), join(appOutput, "assets"), { recursive: true });
 cpSync(join(root, "package.json"), join(appOutput, "package.json"));
+
+const lockfile = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
+const runtimeModules = new Set();
+
+function collectRuntimeModule(moduleName) {
+  if (runtimeModules.has(moduleName)) return;
+  const packagePath = `node_modules/${moduleName}`;
+  const packageInfo = lockfile.packages?.[packagePath];
+  if (!packageInfo) {
+    throw new Error(`Missing package-lock entry for ${moduleName}`);
+  }
+
+  runtimeModules.add(moduleName);
+  for (const dependencyName of Object.keys(packageInfo.dependencies ?? {})) {
+    collectRuntimeModule(dependencyName);
+  }
+}
+
+collectRuntimeModule("tesseract.js");
+
+mkdirSync(join(appOutput, "node_modules"), { recursive: true });
+for (const moduleName of runtimeModules) {
+  cpSync(join(root, "node_modules", moduleName), join(appOutput, "node_modules", moduleName), { recursive: true });
+}
 
 console.log(`Packaged desktop app: ${join(output, "Screenshot Redactor.exe")}`);

@@ -8,10 +8,11 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "執行辨識遮蔽" }));
+    await user.click(screen.getByRole("button", { name: "開發者" }));
+    await user.click(screen.getByRole("button", { name: "跑樣本" }));
 
     expect(screen.getByTestId("redaction-rate")).toHaveTextContent("100%");
     expect(screen.getByText("已遮蔽 · phone · 160")).toBeInTheDocument();
-    expect(screen.getByText("O987-65I-23B")).toBeInTheDocument();
+    expect(screen.getAllByText("O987-65I-23B").length).toBeGreaterThan(0);
   });
 });

@@ -1,19 +1,21 @@
 {
-  "generatedAt": "2026-09-05T02:47:28.377Z",
+  "generatedAt": "2026-09-05T03:10:41.478Z",
   "reports": [
     {
       "sample": "crm",
       "recognitionSuccessRate": "93%",
       "redactionSuccessRate": "100%",
       "precision": "100%",
-      "detections": 8
+      "ocrBoxes": 14,
+      "redactions": 7
     },
     {
       "sample": "settings",
       "recognitionSuccessRate": "100%",
       "redactionSuccessRate": "100%",
       "precision": "100%",
-      "detections": 4
+      "ocrBoxes": 8,
+      "redactions": 3
     }
   ]
 }

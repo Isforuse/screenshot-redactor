@@ -64,8 +64,8 @@ function contextKind(current: TextBox, all: TextBox[]): { kind: RedactionKind; r
   return null;
 }
 
-export function detectSensitiveText(sample: SampleItem): Detection[] {
-  return sample.textBoxes
+export function detectTextBoxes(textBoxes: TextBox[]): Detection[] {
+  return textBoxes
     .map((box) => {
       const reasons: string[] = [];
       let kind: RedactionKind | undefined;
@@ -86,7 +86,7 @@ export function detectSensitiveText(sample: SampleItem): Detection[] {
         reasons.push("uncertainty:ocr-confusion-phone");
       }
 
-      const context = contextKind(box, sample.textBoxes);
+      const context = contextKind(box, textBoxes);
       if (context) {
         kind = kind ?? context.kind;
         score += context.score;
@@ -114,6 +114,10 @@ export function detectSensitiveText(sample: SampleItem): Detection[] {
       } satisfies Detection;
     })
     .filter((item): item is Detection => Boolean(item));
+}
+
+export function detectSensitiveText(sample: SampleItem): Detection[] {
+  return detectTextBoxes(sample.textBoxes);
 }
 
 export function calculateMetrics(sample: SampleItem, detections: Detection[]) {

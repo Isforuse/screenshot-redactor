@@ -5,7 +5,13 @@ const expected = [
   join("dist", "index.html"),
   join("electron", "main.cjs"),
   join("electron", "preload.cjs"),
-  join("release", "win-unpacked", "Screenshot Redactor.exe")
+  join("release", "win-unpacked", "Screenshot Redactor.exe"),
+  join("release", "win-unpacked", "resources", "app", "dist", "index.html"),
+  join("release", "win-unpacked", "resources", "app", "electron", "main.cjs"),
+  join("release", "win-unpacked", "resources", "app", "assets", "ocr", "eng.traineddata"),
+  join("release", "win-unpacked", "resources", "app", "assets", "ocr", "chi_tra.traineddata.gz"),
+  join("release", "win-unpacked", "resources", "app", "node_modules", "tesseract.js", "src", "index.js"),
+  join("release", "win-unpacked", "resources", "app", "node_modules", "tesseract.js-core", "tesseract-core.wasm.js")
 ];
 
 const missing = expected.filter((file) => !existsSync(file));

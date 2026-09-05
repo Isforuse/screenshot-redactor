@@ -1,38 +1,48 @@
 import { Check, Copy, Download, Eye, FileImage, MousePointer2, ShieldCheck, TestTube2, Upload, X } from "lucide-react";
 import { ChangeEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { drawImageUrl, drawSample, redactCanvas } from "./redactor/canvas";
-import { calculateMetrics, detectSensitiveText } from "./redactor/detector";
+import { calculateMetrics, detectSensitiveText, detectTextBoxes } from "./redactor/detector";
 import { samples } from "./redactor/samples";
-import type { Detection, SampleItem } from "./redactor/types";
+import type { Detection, SampleItem, TextBox } from "./redactor/types";
+
+type CaptureImage = { dataUrl: string; width: number; height: number };
+type Selection = { startX: number; startY: number; endX: number; endY: number };
 
 export function App() {
   const [sampleId, setSampleId] = useState(samples[0].id);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [captureImage, setCaptureImage] = useState<{ dataUrl: string; width: number; height: number } | null>(null);
-  const [captureSelection, setCaptureSelection] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+  const [captureImage, setCaptureImage] = useState<CaptureImage | null>(null);
+  const [captureSelection, setCaptureSelection] = useState<Selection | null>(null);
   const [capturedCrop, setCapturedCrop] = useState<string | null>(null);
+  const [ocrTextBoxes, setOcrTextBoxes] = useState<TextBox[]>([]);
   const [isSelecting, setIsSelecting] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("桌面版啟動後會自動進入截圖模式。");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [developerMode, setDeveloperMode] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("開啟後會直接擷取目前畫面，選取範圍後先預覽再複製。");
   const [detections, setDetections] = useState<Detection[]>([]);
   const [hasProcessed, setHasProcessed] = useState(false);
   const sourceCanvasRef = useRef<HTMLCanvasElement>(null);
   const resultCanvasRef = useRef<HTMLCanvasElement>(null);
+  const developerResultCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const sample = useMemo<SampleItem>(() => samples.find((item) => item.id === sampleId) ?? samples[0], [sampleId]);
   const metrics = useMemo(() => calculateMetrics(sample, detections), [sample, detections]);
+  const previewImage = capturedCrop ?? uploadedImage;
 
   useEffect(() => {
-    if (capturedCrop) {
-      if (sourceCanvasRef.current) void drawImageUrl(sourceCanvasRef.current, capturedCrop);
-      if (resultCanvasRef.current) {
-        void drawImageUrl(resultCanvasRef.current, capturedCrop).then(() => redactCanvas(resultCanvasRef.current!, detections));
+    const canvases = [resultCanvasRef.current, developerResultCanvasRef.current].filter(Boolean) as HTMLCanvasElement[];
+
+    if (previewImage) {
+      if (sourceCanvasRef.current) void drawImageUrl(sourceCanvasRef.current, previewImage);
+      for (const canvas of canvases) {
+        void drawImageUrl(canvas, previewImage).then(() => redactCanvas(canvas, detections));
       }
       return;
     }
 
     if (sourceCanvasRef.current) drawSample(sourceCanvasRef.current, sample);
-    if (resultCanvasRef.current) drawSample(resultCanvasRef.current, sample, detections, hasProcessed);
-  }, [sample, detections, hasProcessed, capturedCrop]);
+    for (const canvas of canvases) drawSample(canvas, sample, detections, hasProcessed);
+  }, [sample, detections, hasProcessed, previewImage]);
 
   useEffect(() => {
     if (window.screenshotRedactor) void startDesktopCapture();
@@ -40,24 +50,47 @@ export function App() {
 
   function processSample() {
     const nextDetections = detectSensitiveText(sample);
+    setOcrTextBoxes(sample.textBoxes);
     setDetections(nextDetections);
     setHasProcessed(true);
+    setStatusMessage("樣本已完成辨識與遮蔽。");
+  }
+
+  async function processImage(imageUrl: string) {
+    setIsProcessing(true);
+    setStatusMessage("正在 OCR 辨識並判斷敏感資訊。");
+
+    try {
+      const textBoxes = window.screenshotRedactor ? await window.screenshotRedactor.recognizeImage(imageUrl) : [];
+      const nextDetections = detectTextBoxes(textBoxes);
+      setOcrTextBoxes(textBoxes);
+      setDetections(nextDetections);
+      setHasProcessed(true);
+      setStatusMessage(nextDetections.length > 0 ? "已完成預覽。確認後才會寫入剪貼簿。" : "已完成 OCR，未找到可自動遮蔽的敏感資訊。");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? `OCR 失敗：${error.message}` : "OCR 失敗。");
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   async function startDesktopCapture() {
     if (!window.screenshotRedactor) {
-      setStatusMessage("目前在瀏覽器預覽模式，請使用內建樣本測試遮蔽效果。");
+      setDeveloperMode(true);
+      setStatusMessage("瀏覽器開發模式：可用樣本驗證 OCR adapter 之後的偵測與遮蔽。");
       return;
     }
 
-    setStatusMessage("正在擷取螢幕，請稍候。");
+    setStatusMessage("正在擷取目前畫面。");
     const nextCapture = await window.screenshotRedactor.captureScreen();
     setCaptureImage(nextCapture);
     setCaptureSelection(null);
     setCapturedCrop(null);
+    setUploadedImage(null);
+    setOcrTextBoxes([]);
     setDetections([]);
     setHasProcessed(false);
-    setStatusMessage("拖曳選取截圖範圍，放開滑鼠後進入預覽。");
+    setStatusMessage("拖曳選取截圖範圍，放開後會進入 OCR 與預覽。");
   }
 
   async function finishSelection() {
@@ -79,10 +112,12 @@ export function App() {
     if (!ctx) return;
     ctx.drawImage(source, left, top, width, height, 0, 0, width, height);
 
-    setCapturedCrop(canvas.toDataURL("image/png"));
+    const crop = canvas.toDataURL("image/png");
+    setCapturedCrop(crop);
     setCaptureImage(null);
     setCaptureSelection(null);
-    setStatusMessage("已完成截圖預覽。真 OCR 尚未接入，因此此畫面先保留人工確認後複製流程。");
+    await window.screenshotRedactor?.showPreviewWindow();
+    await processImage(crop);
   }
 
   function pointerPosition(event: PointerEvent<HTMLDivElement>) {
@@ -110,47 +145,53 @@ export function App() {
   function resetSample(nextId: string) {
     setSampleId(nextId);
     setDetections([]);
+    setOcrTextBoxes([]);
     setHasProcessed(false);
     setUploadedImage(null);
+    setCapturedCrop(null);
   }
 
-  function uploadImage(event: ChangeEvent<HTMLInputElement>) {
+  async function uploadImage(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    setUploadedImage(URL.createObjectURL(file));
+    const imageUrl = URL.createObjectURL(file);
+    setUploadedImage(imageUrl);
+    setCapturedCrop(null);
     setDetections([]);
+    setOcrTextBoxes([]);
     setHasProcessed(false);
+    await processImage(imageUrl);
   }
 
   function downloadResult() {
     const canvas = resultCanvasRef.current;
     if (!canvas) return;
     const link = document.createElement("a");
-    link.download = `redacted-${sample.id}.png`;
+    link.download = `redacted-${previewImage ? "capture" : sample.id}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   }
 
   async function copyReport() {
-    await navigator.clipboard.writeText(JSON.stringify({ sample: sample.id, metrics, detections }, null, 2));
+    await navigator.clipboard.writeText(JSON.stringify({ sample: sample.id, metrics, ocrTextBoxes, detections }, null, 2));
   }
 
   return (
-    <main className="redactor-shell">
+    <main className={developerMode ? "redactor-shell developer-shell" : "redactor-shell"}>
       <section className="tool-header" aria-labelledby="app-title">
         <div>
-          <p className="eyebrow">Screenshot Redactor MVP</p>
-          <h1 id="app-title">截圖個資自動遮蔽</h1>
+          <p className="eyebrow">Screenshot Redactor</p>
+          <h1 id="app-title">截圖去識別化</h1>
           <p className="status-text">{statusMessage}</p>
         </div>
         <div className="button-row">
           <button className="primary-button" onClick={startDesktopCapture} type="button">
             <MousePointer2 aria-hidden="true" />
-            開始截圖
+            截圖
           </button>
-          <button className="secondary-button" onClick={processSample} type="button">
-            <ShieldCheck aria-hidden="true" />
-            執行辨識遮蔽
+          <button className="ghost-button" onClick={() => setDeveloperMode((value) => !value)} type="button">
+            <TestTube2 aria-hidden="true" />
+            {developerMode ? "一般模式" : "開發者"}
           </button>
         </div>
       </section>
@@ -187,97 +228,129 @@ export function App() {
               />
             ) : null}
           </div>
-          <button className="cancel-capture" onClick={() => setCaptureImage(null)} type="button" aria-label="取消截圖">
+          <button className="cancel-capture" onClick={() => {
+            setCaptureImage(null);
+            void window.screenshotRedactor?.showPreviewWindow();
+          }} type="button" aria-label="取消截圖">
             <X aria-hidden="true" />
           </button>
         </section>
       ) : null}
 
-      <section className="control-bar" aria-label="輸入控制">
-        <div className="segmented">
-          {samples.map((item) => (
-            <button aria-pressed={sample.id === item.id} className={sample.id === item.id ? "active" : ""} key={item.id} onClick={() => resetSample(item.id)} type="button">
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <label className="file-button">
-          <Upload aria-hidden="true" />
-          上傳圖片
-          <input accept="image/*" onChange={uploadImage} type="file" />
-        </label>
-      </section>
+      {isProcessing ? <section className="processing-panel">OCR 辨識中...</section> : null}
 
-      <section className="workspace-grid">
-        <article className="preview-panel">
-          <div className="panel-title">
-            <FileImage aria-hidden="true" />
-            <h2>原始截圖</h2>
+      {developerMode ? (
+        <section className="control-bar" aria-label="開發者輸入控制">
+          <div className="segmented">
+            {samples.map((item) => (
+              <button aria-pressed={sample.id === item.id} className={sample.id === item.id ? "active" : ""} key={item.id} onClick={() => resetSample(item.id)} type="button">
+                {item.label}
+              </button>
+            ))}
           </div>
-          {uploadedImage ? <img alt="uploaded screenshot" src={uploadedImage} /> : <canvas ref={sourceCanvasRef} />}
-        </article>
+          <button className="secondary-button" onClick={processSample} type="button">
+            <ShieldCheck aria-hidden="true" />
+            跑樣本
+          </button>
+          <label className="file-button">
+            <Upload aria-hidden="true" />
+            上傳圖片
+            <input accept="image/*" onChange={(event) => void uploadImage(event)} type="file" />
+          </label>
+        </section>
+      ) : null}
 
-        <article className="preview-panel">
+      <section className="user-preview">
+        <article className="preview-panel result-panel">
           <div className="panel-title">
             <Eye aria-hidden="true" />
-            <h2>遮蔽結果</h2>
+            <h2>預覽</h2>
           </div>
           <canvas data-testid="result-canvas" ref={resultCanvasRef} />
+          <div className="button-row">
+            <button className="primary-button" onClick={copyResultImage} type="button">
+              <Check aria-hidden="true" />
+              確認並複製
+            </button>
+            <button className="secondary-button" onClick={downloadResult} type="button">
+              <Download aria-hidden="true" />
+              儲存圖片
+            </button>
+          </div>
         </article>
       </section>
 
-      <section className="metrics-grid" aria-label="實測指標">
-        <article>
-          <span>辨識成功率</span>
-          <strong data-testid="recognition-rate">{metrics.recognitionSuccessRate}%</strong>
-        </article>
-        <article>
-          <span>遮蔽成功率</span>
-          <strong data-testid="redaction-rate">{metrics.redactionSuccessRate}%</strong>
-        </article>
-        <article>
-          <span>誤遮精準率</span>
-          <strong data-testid="precision-rate">{metrics.precision}%</strong>
-        </article>
-        <article>
-          <span>成功 / 應遮</span>
-          <strong>{metrics.truePositive} / {metrics.expectedSensitive}</strong>
-        </article>
-      </section>
+      {developerMode ? (
+        <>
+          <section className="workspace-grid">
+            <article className="preview-panel">
+              <div className="panel-title">
+                <FileImage aria-hidden="true" />
+                <h2>原圖</h2>
+              </div>
+              {uploadedImage ? <img alt="uploaded screenshot" src={uploadedImage} /> : <canvas ref={sourceCanvasRef} />}
+            </article>
+            <article className="preview-panel">
+              <div className="panel-title">
+                <Eye aria-hidden="true" />
+                <h2>遮蔽後</h2>
+              </div>
+              <canvas ref={developerResultCanvasRef} />
+            </article>
+          </section>
 
-      <section className="detail-panel">
-        <div className="panel-title">
-          <TestTube2 aria-hidden="true" />
-          <h2>實際功能測試結果</h2>
-        </div>
-        <div className="button-row">
-          <button className="secondary-button" onClick={downloadResult} type="button">
-            <Download aria-hidden="true" />
-            下載遮蔽圖
-          </button>
-          <button className="primary-button" onClick={copyResultImage} type="button">
-            <Check aria-hidden="true" />
-            確認並複製圖片
-          </button>
-          <button className="ghost-button" onClick={copyReport} type="button">
-            <Copy aria-hidden="true" />
-            複製報告 JSON
-          </button>
-        </div>
-        <div className="detection-list">
-          {detections.length === 0 ? (
-            <p className="empty-text">尚未執行。請按「執行辨識遮蔽」。</p>
-          ) : (
-            detections.map((detection) => (
-              <article key={detection.textboxId}>
-                <strong>{detection.action === "redact" ? "已遮蔽" : "候選"} · {detection.kind} · {detection.score}</strong>
-                <span>{detection.text}</span>
-                <small>{detection.reasons.join(" / ")}</small>
-              </article>
-            ))
-          )}
-        </div>
-      </section>
+          <section className="metrics-grid" aria-label="實測指標">
+            <article>
+              <span>辨識成功率</span>
+              <strong data-testid="recognition-rate">{metrics.recognitionSuccessRate}%</strong>
+            </article>
+            <article>
+              <span>遮蔽成功率</span>
+              <strong data-testid="redaction-rate">{metrics.redactionSuccessRate}%</strong>
+            </article>
+            <article>
+              <span>精準率</span>
+              <strong data-testid="precision-rate">{metrics.precision}%</strong>
+            </article>
+            <article>
+              <span>OCR 文字框</span>
+              <strong>{ocrTextBoxes.length}</strong>
+            </article>
+          </section>
+
+          <section className="detail-panel">
+            <div className="panel-title">
+              <TestTube2 aria-hidden="true" />
+              <h2>開發者辨識結果</h2>
+            </div>
+            <div className="button-row">
+              <button className="ghost-button" onClick={copyReport} type="button">
+                <Copy aria-hidden="true" />
+                複製 JSON
+              </button>
+            </div>
+            <div className="detection-list">
+              {ocrTextBoxes.map((box) => (
+                <article key={box.id}>
+                  <strong>OCR · {Math.round(box.confidence * 100)}%</strong>
+                  <span>{box.text}</span>
+                  <small>
+                    x:{Math.round(box.box.x)} y:{Math.round(box.box.y)} w:{Math.round(box.box.width)} h:{Math.round(box.box.height)}
+                  </small>
+                </article>
+              ))}
+              {detections.map((detection) => (
+                <article key={detection.textboxId}>
+                  <strong>{detection.action === "redact" ? "已遮蔽" : "候選"} · {detection.kind} · {detection.score}</strong>
+                  <span>{detection.text}</span>
+                  <small>{detection.reasons.join(" / ")}</small>
+                </article>
+              ))}
+              {ocrTextBoxes.length === 0 && detections.length === 0 ? <p className="empty-text">尚無 OCR 或偵測結果。</p> : null}
+            </div>
+          </section>
+        </>
+      ) : null}
     </main>
   );
 }

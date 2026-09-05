@@ -39,6 +39,7 @@ export function drawSample(canvas: HTMLCanvasElement, sample: SampleItem, detect
   }
 }
 
+
 export async function drawImageUrl(canvas: HTMLCanvasElement, imageUrl: string) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;

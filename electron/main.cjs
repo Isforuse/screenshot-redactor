@@ -1,5 +1,6 @@
 const { BrowserWindow, app, clipboard, desktopCapturer, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
+const { createWorker } = require("tesseract.js");
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -51,7 +52,11 @@ ipcMain.handle("capture:screen", async () => {
     thumbnailSize: { width: Math.round(width * display.scaleFactor), height: Math.round(height * display.scaleFactor) }
   });
 
-  if (focusedWindow) focusedWindow.show();
+  if (focusedWindow) {
+    focusedWindow.setFullScreen(true);
+    focusedWindow.show();
+    focusedWindow.focus();
+  }
 
   const primarySource = sources[0];
   if (!primarySource) throw new Error("No screen source available.");
@@ -63,11 +68,51 @@ ipcMain.handle("capture:screen", async () => {
   };
 });
 
+ipcMain.handle("window:preview-mode", async () => {
+  const focusedWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  if (!focusedWindow) return false;
+  focusedWindow.setFullScreen(false);
+  focusedWindow.setSize(980, 760);
+  focusedWindow.center();
+  focusedWindow.show();
+  focusedWindow.focus();
+  return true;
+});
+
 ipcMain.handle("clipboard:write-image", async (_event, dataUrl) => {
   const image = nativeImage.createFromDataURL(dataUrl);
   if (image.isEmpty()) throw new Error("Cannot write an empty image to clipboard.");
   clipboard.writeImage(image);
   return true;
+});
+
+ipcMain.handle("ocr:recognize", async (_event, dataUrl) => {
+  const appRoot = app.isPackaged ? path.join(process.resourcesPath, "app") : path.join(__dirname, "..");
+  const worker = await createWorker("eng+chi_tra", undefined, {
+    cachePath: path.join(app.getPath("userData"), "tesseract-cache"),
+    langPath: path.join(appRoot, "assets", "ocr")
+  });
+
+  try {
+    const result = await worker.recognize(dataUrl);
+    const words = result.data.words ?? [];
+
+    return words
+      .filter((word) => word.text?.trim() && word.bbox)
+      .map((word, index) => ({
+        id: `ocr-${index}`,
+        text: word.text.trim(),
+        confidence: Math.max(0, Math.min(1, (word.confidence ?? 0) / 100)),
+        box: {
+          x: word.bbox.x0,
+          y: word.bbox.y0,
+          width: word.bbox.x1 - word.bbox.x0,
+          height: word.bbox.y1 - word.bbox.y0
+        }
+      }));
+  } finally {
+    await worker.terminate();
+  }
 });
 
 app.whenReady().then(() => {

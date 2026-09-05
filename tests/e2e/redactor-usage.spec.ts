@@ -5,15 +5,17 @@ import path from "node:path";
 test("actual MVP usage report for screenshot redaction", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "截圖個資自動遮蔽" })).toBeVisible();
-  await page.getByRole("button", { name: "執行辨識遮蔽" }).click();
+  await expect(page.getByRole("heading", { name: "截圖去識別化" })).toBeVisible();
+  await page.getByRole("button", { name: "開發者" }).click();
+  await page.getByRole("button", { name: "跑樣本" }).click();
 
   const crmReport = {
     sample: "crm",
     recognitionSuccessRate: await page.getByTestId("recognition-rate").innerText(),
     redactionSuccessRate: await page.getByTestId("redaction-rate").innerText(),
     precision: await page.getByTestId("precision-rate").innerText(),
-    detections: await page.locator(".detection-list article").count()
+    ocrBoxes: await page.locator(".detection-list article").filter({ hasText: "OCR ·" }).count(),
+    redactions: await page.locator(".detection-list article").filter({ hasText: "已遮蔽" }).count()
   };
 
   await expect(page.getByTestId("recognition-rate")).toHaveText("93%");
@@ -23,14 +25,15 @@ test("actual MVP usage report for screenshot redaction", async ({ page }) => {
   await page.getByTestId("result-canvas").screenshot({ path: "test-results/crm-redacted.png" });
 
   await page.getByRole("button", { name: "帳號設定截圖" }).click();
-  await page.getByRole("button", { name: "執行辨識遮蔽" }).click();
+  await page.getByRole("button", { name: "跑樣本" }).click();
 
   const settingsReport = {
     sample: "settings",
     recognitionSuccessRate: await page.getByTestId("recognition-rate").innerText(),
     redactionSuccessRate: await page.getByTestId("redaction-rate").innerText(),
     precision: await page.getByTestId("precision-rate").innerText(),
-    detections: await page.locator(".detection-list article").count()
+    ocrBoxes: await page.locator(".detection-list article").filter({ hasText: "OCR ·" }).count(),
+    redactions: await page.locator(".detection-list article").filter({ hasText: "已遮蔽" }).count()
   };
 
   await expect(page.getByTestId("recognition-rate")).toHaveText("100%");

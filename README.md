@@ -4,16 +4,19 @@ Local-first MVP for screenshot personal-data redaction.
 
 ## Current Scope
 
-This branch implements the browser-based core before native Windows capture and `.exe` packaging:
+This branch implements the first packaged Windows desktop workflow:
 
 - Built-in screenshot-like samples for CRM and account settings screens
 - OCR adapter boundary represented by structured text boxes and confidence values
 - Sensitive-data detection with regex, label/context inference, table-column inference, and OCR confusion recovery
 - Automatic black-bar redaction on canvas
 - Upload entry point for manual image trials
+- Electron desktop shell packaged as a Windows `.exe`
+- Startup screenshot mode: opening the desktop app immediately captures the screen and shows a drag-selection overlay
+- Preview-before-clipboard flow: selected screenshots are previewed first, then copied to the Windows clipboard only after confirmation
 - Usage-style Playwright test that operates the UI and exports result evidence
 
-The current MVP intentionally keeps the OCR engine replaceable. The next implementation step is to connect a real OCR adapter, then add native screenshot capture and clipboard output in an isolated desktop shell.
+The current MVP intentionally keeps the OCR engine replaceable. The desktop screenshot and clipboard flow is in place; the next implementation step is to connect a real OCR adapter so real screenshots are automatically redacted instead of using the built-in structured OCR fixtures.
 
 ## Windows Desktop Build
 
@@ -32,6 +35,14 @@ release/win-unpacked/Screenshot Redactor.exe
 ```
 
 `release/` is intentionally ignored by Git because the desktop runtime is large. Rebuild it locally from the committed source and lockfile.
+
+Desktop behavior:
+
+1. Open `release/win-unpacked/Screenshot Redactor.exe`.
+2. The app captures the current screen and shows a full-window selection overlay.
+3. Drag to select an area.
+4. The selected image opens in preview.
+5. Click `確認並複製圖片` to put the preview image into the Windows clipboard.
 
 ## Practical Test Evidence
 
@@ -53,7 +64,11 @@ Latest local run:
 - `src/redactor/samples.ts`: realistic screenshot fixtures and expected sensitive fields
 - `src/redactor/detector.ts`: regex, context, layout, uncertainty scoring, and metrics
 - `src/redactor/canvas.ts`: sample rendering and black-bar redaction
-- `src/App.tsx`: MVP UI and report actions
+- `electron/main.cjs`: desktop capture and clipboard IPC
+- `electron/preload.cjs`: safe renderer bridge
+- `src/App.tsx`: MVP UI, screenshot overlay, preview, clipboard confirmation, and report actions
+- `scripts/package-desktop.mjs`: reproducible unpacked Windows desktop package
+- `scripts/desktop-smoke.mjs`: packaged exe smoke check
 - `tests/e2e/redactor-usage.spec.ts`: actual browser usage test and evidence export
 
 ## Isolated Environment

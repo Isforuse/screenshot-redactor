@@ -1,6 +1,6 @@
-import { Copy, Download, Eye, FileImage, ShieldCheck, TestTube2, Upload } from "lucide-react";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { drawSample } from "./redactor/canvas";
+import { Check, Copy, Download, Eye, FileImage, MousePointer2, ShieldCheck, TestTube2, Upload, X } from "lucide-react";
+import { ChangeEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { drawImageUrl, drawSample, redactCanvas } from "./redactor/canvas";
 import { calculateMetrics, detectSensitiveText } from "./redactor/detector";
 import { samples } from "./redactor/samples";
 import type { Detection, SampleItem } from "./redactor/types";
@@ -8,6 +8,11 @@ import type { Detection, SampleItem } from "./redactor/types";
 export function App() {
   const [sampleId, setSampleId] = useState(samples[0].id);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [captureImage, setCaptureImage] = useState<{ dataUrl: string; width: number; height: number } | null>(null);
+  const [captureSelection, setCaptureSelection] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+  const [capturedCrop, setCapturedCrop] = useState<string | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("桌面版啟動後會自動進入截圖模式。");
   const [detections, setDetections] = useState<Detection[]>([]);
   const [hasProcessed, setHasProcessed] = useState(false);
   const sourceCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -17,14 +22,89 @@ export function App() {
   const metrics = useMemo(() => calculateMetrics(sample, detections), [sample, detections]);
 
   useEffect(() => {
+    if (capturedCrop) {
+      if (sourceCanvasRef.current) void drawImageUrl(sourceCanvasRef.current, capturedCrop);
+      if (resultCanvasRef.current) {
+        void drawImageUrl(resultCanvasRef.current, capturedCrop).then(() => redactCanvas(resultCanvasRef.current!, detections));
+      }
+      return;
+    }
+
     if (sourceCanvasRef.current) drawSample(sourceCanvasRef.current, sample);
     if (resultCanvasRef.current) drawSample(resultCanvasRef.current, sample, detections, hasProcessed);
-  }, [sample, detections, hasProcessed]);
+  }, [sample, detections, hasProcessed, capturedCrop]);
+
+  useEffect(() => {
+    if (window.screenshotRedactor) void startDesktopCapture();
+  }, []);
 
   function processSample() {
     const nextDetections = detectSensitiveText(sample);
     setDetections(nextDetections);
     setHasProcessed(true);
+  }
+
+  async function startDesktopCapture() {
+    if (!window.screenshotRedactor) {
+      setStatusMessage("目前在瀏覽器預覽模式，請使用內建樣本測試遮蔽效果。");
+      return;
+    }
+
+    setStatusMessage("正在擷取螢幕，請稍候。");
+    const nextCapture = await window.screenshotRedactor.captureScreen();
+    setCaptureImage(nextCapture);
+    setCaptureSelection(null);
+    setCapturedCrop(null);
+    setDetections([]);
+    setHasProcessed(false);
+    setStatusMessage("拖曳選取截圖範圍，放開滑鼠後進入預覽。");
+  }
+
+  async function finishSelection() {
+    if (!captureImage || !captureSelection) return;
+    const left = Math.min(captureSelection.startX, captureSelection.endX);
+    const top = Math.min(captureSelection.startY, captureSelection.endY);
+    const width = Math.abs(captureSelection.endX - captureSelection.startX);
+    const height = Math.abs(captureSelection.endY - captureSelection.startY);
+    if (width < 12 || height < 12) return;
+
+    const source = new Image();
+    source.src = captureImage.dataUrl;
+    await source.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(width);
+    canvas.height = Math.round(height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(source, left, top, width, height, 0, 0, width, height);
+
+    setCapturedCrop(canvas.toDataURL("image/png"));
+    setCaptureImage(null);
+    setCaptureSelection(null);
+    setStatusMessage("已完成截圖預覽。真 OCR 尚未接入，因此此畫面先保留人工確認後複製流程。");
+  }
+
+  function pointerPosition(event: PointerEvent<HTMLDivElement>) {
+    if (!captureImage) return { x: 0, y: 0 };
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * captureImage.width,
+      y: ((event.clientY - rect.top) / rect.height) * captureImage.height
+    };
+  }
+
+  async function copyResultImage() {
+    const canvas = resultCanvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL("image/png");
+    if (window.screenshotRedactor) {
+      await window.screenshotRedactor.copyImage(dataUrl);
+      setStatusMessage("遮蔽後圖片已寫入剪貼簿。");
+      return;
+    }
+    await navigator.clipboard.writeText(dataUrl);
+    setStatusMessage("瀏覽器模式已複製圖片 data URL。");
   }
 
   function resetSample(nextId: string) {
@@ -61,12 +141,57 @@ export function App() {
         <div>
           <p className="eyebrow">Screenshot Redactor MVP</p>
           <h1 id="app-title">截圖個資自動遮蔽</h1>
+          <p className="status-text">{statusMessage}</p>
         </div>
-        <button className="primary-button" onClick={processSample} type="button">
-          <ShieldCheck aria-hidden="true" />
-          執行辨識遮蔽
-        </button>
+        <div className="button-row">
+          <button className="primary-button" onClick={startDesktopCapture} type="button">
+            <MousePointer2 aria-hidden="true" />
+            開始截圖
+          </button>
+          <button className="secondary-button" onClick={processSample} type="button">
+            <ShieldCheck aria-hidden="true" />
+            執行辨識遮蔽
+          </button>
+        </div>
       </section>
+
+      {captureImage ? (
+        <section className="capture-overlay" aria-label="截圖選取">
+          <div
+            className="capture-stage"
+            onPointerDown={(event) => {
+              const point = pointerPosition(event);
+              setCaptureSelection({ startX: point.x, startY: point.y, endX: point.x, endY: point.y });
+              setIsSelecting(true);
+            }}
+            onPointerMove={(event) => {
+              if (!isSelecting || !captureSelection) return;
+              const point = pointerPosition(event);
+              setCaptureSelection((current) => (current ? { ...current, endX: point.x, endY: point.y } : current));
+            }}
+            onPointerUp={() => {
+              setIsSelecting(false);
+              void finishSelection();
+            }}
+          >
+            <img alt="screen capture selection" src={captureImage.dataUrl} />
+            {captureSelection ? (
+              <div
+                className="selection-box"
+                style={{
+                  left: `${(Math.min(captureSelection.startX, captureSelection.endX) / captureImage.width) * 100}%`,
+                  top: `${(Math.min(captureSelection.startY, captureSelection.endY) / captureImage.height) * 100}%`,
+                  width: `${(Math.abs(captureSelection.endX - captureSelection.startX) / captureImage.width) * 100}%`,
+                  height: `${(Math.abs(captureSelection.endY - captureSelection.startY) / captureImage.height) * 100}%`
+                }}
+              />
+            ) : null}
+          </div>
+          <button className="cancel-capture" onClick={() => setCaptureImage(null)} type="button" aria-label="取消截圖">
+            <X aria-hidden="true" />
+          </button>
+        </section>
+      ) : null}
 
       <section className="control-bar" aria-label="輸入控制">
         <div className="segmented">
@@ -129,6 +254,10 @@ export function App() {
           <button className="secondary-button" onClick={downloadResult} type="button">
             <Download aria-hidden="true" />
             下載遮蔽圖
+          </button>
+          <button className="primary-button" onClick={copyResultImage} type="button">
+            <Check aria-hidden="true" />
+            確認並複製圖片
           </button>
           <button className="ghost-button" onClick={copyReport} type="button">
             <Copy aria-hidden="true" />

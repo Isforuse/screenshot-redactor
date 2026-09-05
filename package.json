@@ -30,24 +30,6 @@
     "vite": "^8.2.0"
   },
   "main": "electron/main.cjs",
-  "build": {
-    "appId": "tw.local.screenshot-redactor",
-    "productName": "Screenshot Redactor",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        "portable"
-      ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
-    }
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",

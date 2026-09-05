@@ -38,3 +38,28 @@ export function drawSample(canvas: HTMLCanvasElement, sample: SampleItem, detect
     }
   }
 }
+
+export async function drawImageUrl(canvas: HTMLCanvasElement, imageUrl: string) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const image = new Image();
+  image.src = imageUrl;
+  await image.decode();
+
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  ctx.drawImage(image, 0, 0);
+}
+
+export function redactCanvas(canvas: HTMLCanvasElement, detections: Detection[]) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  for (const detection of detections) {
+    if (detection.action !== "redact") continue;
+    const pad = 5;
+    ctx.fillStyle = "#111827";
+    ctx.fillRect(detection.box.x - pad, detection.box.y - pad, detection.box.width + pad * 2, detection.box.height + pad * 2);
+  }
+}

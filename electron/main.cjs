@@ -1,4 +1,4 @@
-const { BrowserWindow, app, shell } = require("electron");
+const { BrowserWindow, app, clipboard, desktopCapturer, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 
 function createWindow() {
@@ -37,6 +37,38 @@ function createWindow() {
     window.loadURL("http://127.0.0.1:5173/");
   }
 }
+
+ipcMain.handle("capture:screen", async () => {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  if (focusedWindow) focusedWindow.hide();
+
+  await new Promise((resolve) => setTimeout(resolve, 180));
+
+  const display = screen.getPrimaryDisplay();
+  const { width, height } = display.size;
+  const sources = await desktopCapturer.getSources({
+    types: ["screen"],
+    thumbnailSize: { width: Math.round(width * display.scaleFactor), height: Math.round(height * display.scaleFactor) }
+  });
+
+  if (focusedWindow) focusedWindow.show();
+
+  const primarySource = sources[0];
+  if (!primarySource) throw new Error("No screen source available.");
+
+  return {
+    dataUrl: primarySource.thumbnail.toDataURL(),
+    width: primarySource.thumbnail.getSize().width,
+    height: primarySource.thumbnail.getSize().height
+  };
+});
+
+ipcMain.handle("clipboard:write-image", async (_event, dataUrl) => {
+  const image = nativeImage.createFromDataURL(dataUrl);
+  if (image.isEmpty()) throw new Error("Cannot write an empty image to clipboard.");
+  clipboard.writeImage(image);
+  return true;
+});
 
 app.whenReady().then(() => {
   createWindow();

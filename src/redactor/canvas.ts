@@ -53,6 +53,19 @@ export async function drawImageUrl(canvas: HTMLCanvasElement, imageUrl: string) 
   ctx.drawImage(image, 0, 0);
 }
 
+export function drawDetectionBoxes(canvas: HTMLCanvasElement, detections: Detection[]) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  for (const detection of detections) {
+    if (detection.action !== "redact") continue;
+    const pad = 5;
+    ctx.strokeStyle = "#dc2626";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(detection.box.x - pad, detection.box.y - pad, detection.box.width + pad * 2, detection.box.height + pad * 2);
+  }
+}
+
 export function redactCanvas(canvas: HTMLCanvasElement, detections: Detection[]) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;

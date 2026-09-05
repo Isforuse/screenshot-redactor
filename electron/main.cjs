@@ -2,6 +2,14 @@ const { BrowserWindow, app, clipboard, desktopCapturer, ipcMain, nativeImage, sc
 const path = require("node:path");
 const { createWorker } = require("tesseract.js");
 
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught main process error:", error);
+});
+
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled main process rejection:", error);
+});
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1180,
@@ -88,12 +96,14 @@ ipcMain.handle("clipboard:write-image", async (_event, dataUrl) => {
 
 ipcMain.handle("ocr:recognize", async (_event, dataUrl) => {
   const appRoot = app.isPackaged ? path.join(process.resourcesPath, "app") : path.join(__dirname, "..");
-  const worker = await createWorker("eng+chi_tra", undefined, {
-    cachePath: path.join(app.getPath("userData"), "tesseract-cache"),
-    langPath: path.join(appRoot, "assets", "ocr")
-  });
+  let worker;
 
   try {
+    worker = await createWorker("eng+chi_tra", undefined, {
+      cachePath: path.join(app.getPath("userData"), "tesseract-cache"),
+      langPath: path.join(appRoot, "assets", "ocr")
+    });
+
     const result = await worker.recognize(dataUrl);
     const words = result.data.words ?? [];
 
@@ -111,7 +121,7 @@ ipcMain.handle("ocr:recognize", async (_event, dataUrl) => {
         }
       }));
   } finally {
-    await worker.terminate();
+    if (worker) await worker.terminate();
   }
 });
 

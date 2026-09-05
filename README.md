@@ -15,6 +15,8 @@ This branch implements the first packaged Windows desktop workflow:
 - Startup screenshot mode: opening the desktop app immediately captures the screen and shows a drag-selection overlay
 - Preview-before-clipboard flow: selected screenshots are previewed first, then copied to the Windows clipboard only after confirmation
 - Local OCR adapter in the Electron main process using Tesseract.js
+- Pre-redaction marking: the preview shows red boxes around regions that will be redacted before the black-bar output is accepted
+- Developer mode for OCR/debug review without resetting the current capture
 - Usage-style Playwright test that operates the UI and exports result evidence
 
 The current OCR adapter uses local Tesseract language data for `eng+chi_tra`. It proves the local OCR path for mixed English and Traditional Chinese screenshots, though model-quality tuning is still needed for small or low-contrast text.
@@ -43,7 +45,14 @@ Desktop behavior:
 2. The app captures the current screen and shows a full-window selection overlay.
 3. Drag to select an area.
 4. The selected image runs through local OCR and opens in preview.
-5. Click `確認並複製圖片` to put the preview image into the Windows clipboard.
+5. The left preview marks regions that will be redacted; the right preview shows the final black-bar output.
+6. Click `確認並複製` to put the redacted image into the Windows clipboard.
+
+Developer mode:
+
+- Shows OCR text, confidence, and coordinates.
+- Shows redaction type, score, and reasons.
+- Shows before/after comparison without replacing the current capture with test fixtures.
 
 ## Practical Test Evidence
 

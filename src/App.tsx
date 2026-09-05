@@ -1,6 +1,6 @@
 import { Check, Copy, Download, Eye, FileImage, MousePointer2, ShieldCheck, TestTube2, Upload, X } from "lucide-react";
 import { ChangeEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
-import { drawImageUrl, drawSample, redactCanvas } from "./redactor/canvas";
+import { drawDetectionBoxes, drawImageUrl, drawSample, redactCanvas } from "./redactor/canvas";
 import { calculateMetrics, detectSensitiveText, detectTextBoxes } from "./redactor/detector";
 import { samples } from "./redactor/samples";
 import type { Detection, SampleItem, TextBox } from "./redactor/types";
@@ -22,6 +22,7 @@ export function App() {
   const [detections, setDetections] = useState<Detection[]>([]);
   const [hasProcessed, setHasProcessed] = useState(false);
   const sourceCanvasRef = useRef<HTMLCanvasElement>(null);
+  const markedCanvasRef = useRef<HTMLCanvasElement>(null);
   const resultCanvasRef = useRef<HTMLCanvasElement>(null);
   const developerResultCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -30,18 +31,22 @@ export function App() {
   const previewImage = capturedCrop ?? uploadedImage;
 
   useEffect(() => {
-    const canvases = [resultCanvasRef.current, developerResultCanvasRef.current].filter(Boolean) as HTMLCanvasElement[];
+    const resultCanvases = [resultCanvasRef.current, developerResultCanvasRef.current].filter(Boolean) as HTMLCanvasElement[];
+    const markedCanvases = [markedCanvasRef.current, sourceCanvasRef.current].filter(Boolean) as HTMLCanvasElement[];
 
     if (previewImage) {
-      if (sourceCanvasRef.current) void drawImageUrl(sourceCanvasRef.current, previewImage);
-      for (const canvas of canvases) {
+      for (const canvas of markedCanvases) {
+        void drawImageUrl(canvas, previewImage).then(() => drawDetectionBoxes(canvas, detections));
+      }
+      for (const canvas of resultCanvases) {
         void drawImageUrl(canvas, previewImage).then(() => redactCanvas(canvas, detections));
       }
       return;
     }
 
     if (sourceCanvasRef.current) drawSample(sourceCanvasRef.current, sample);
-    for (const canvas of canvases) drawSample(canvas, sample, detections, hasProcessed);
+    if (markedCanvasRef.current) drawSample(markedCanvasRef.current, sample, detections, false);
+    for (const canvas of resultCanvases) drawSample(canvas, sample, detections, hasProcessed);
   }, [sample, detections, hasProcessed, previewImage]);
 
   useEffect(() => {
@@ -61,12 +66,16 @@ export function App() {
     setStatusMessage("正在 OCR 辨識並判斷敏感資訊。");
 
     try {
-      const textBoxes = window.screenshotRedactor ? await window.screenshotRedactor.recognizeImage(imageUrl) : [];
+      const textBoxes = window.screenshotRedactor ? await window.screenshotRedactor.recognizeImage(imageUrl) : sample.textBoxes;
       const nextDetections = detectTextBoxes(textBoxes);
       setOcrTextBoxes(textBoxes);
       setDetections(nextDetections);
       setHasProcessed(true);
-      setStatusMessage(nextDetections.length > 0 ? "已完成預覽。確認後才會寫入剪貼簿。" : "已完成 OCR，未找到可自動遮蔽的敏感資訊。");
+      setStatusMessage(
+        nextDetections.length > 0
+          ? `已標示 ${nextDetections.filter((item) => item.action === "redact").length} 個將打碼區域。確認後才會寫入剪貼簿。`
+          : `已完成 OCR，辨識到 ${textBoxes.length} 個文字框，未找到可自動遮蔽的敏感資訊。`
+      );
     } catch (error) {
       setStatusMessage(error instanceof Error ? `OCR 失敗：${error.message}` : "OCR 失敗。");
     } finally {
@@ -261,10 +270,17 @@ export function App() {
       ) : null}
 
       <section className="user-preview">
+        <article className="preview-panel">
+          <div className="panel-title">
+            <FileImage aria-hidden="true" />
+            <h2>將打碼</h2>
+          </div>
+          <canvas data-testid="marked-canvas" ref={markedCanvasRef} />
+        </article>
         <article className="preview-panel result-panel">
           <div className="panel-title">
             <Eye aria-hidden="true" />
-            <h2>預覽</h2>
+            <h2>完成預覽</h2>
           </div>
           <canvas data-testid="result-canvas" ref={resultCanvasRef} />
           <div className="button-row">
@@ -286,7 +302,7 @@ export function App() {
             <article className="preview-panel">
               <div className="panel-title">
                 <FileImage aria-hidden="true" />
-                <h2>原圖</h2>
+                <h2>打碼前標示</h2>
               </div>
               {uploadedImage ? <img alt="uploaded screenshot" src={uploadedImage} /> : <canvas ref={sourceCanvasRef} />}
             </article>

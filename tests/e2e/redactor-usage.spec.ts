@@ -22,7 +22,9 @@ test("actual MVP usage report for screenshot redaction", async ({ page }) => {
   await expect(page.getByTestId("redaction-rate")).toHaveText("100%");
   await expect(page.getByTestId("precision-rate")).toHaveText("100%");
   await expect(page.getByText("uncertainty:ocr-confusion-phone")).toBeVisible();
-  await page.getByTestId("result-canvas").screenshot({ path: "test-results/crm-redacted.png" });
+  await expect(page.getByTestId("marked-preview")).toBeVisible();
+  await expect(page.getByTestId("result-preview")).toBeVisible();
+  await page.getByTestId("result-preview").screenshot({ path: "test-results/crm-redacted.png" });
 
   await page.getByRole("button", { name: "帳號設定截圖" }).click();
   await page.getByRole("button", { name: "跑樣本" }).click();
@@ -39,7 +41,9 @@ test("actual MVP usage report for screenshot redaction", async ({ page }) => {
   await expect(page.getByTestId("recognition-rate")).toHaveText("100%");
   await expect(page.getByTestId("redaction-rate")).toHaveText("100%");
   await expect(page.getByTestId("precision-rate")).toHaveText("100%");
-  await page.getByTestId("result-canvas").screenshot({ path: "test-results/settings-redacted.png" });
+  await expect(page.getByTestId("marked-preview")).toBeVisible();
+  await expect(page.getByTestId("result-preview")).toBeVisible();
+  await page.getByTestId("result-preview").screenshot({ path: "test-results/settings-redacted.png" });
 
   await fs.mkdir("test-results", { recursive: true });
   await fs.writeFile(

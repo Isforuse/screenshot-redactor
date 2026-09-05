@@ -1,12 +1,26 @@
 const { BrowserWindow, app, clipboard, desktopCapturer, ipcMain, nativeImage, screen, shell } = require("electron");
+const fs = require("node:fs");
 const path = require("node:path");
 const { createWorker } = require("tesseract.js");
 
+function writeLog(message, error) {
+  try {
+    const logDir = path.join(app.getPath("userData"), "logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    const detail = error?.stack ?? error?.message ?? String(error ?? "");
+    fs.appendFileSync(path.join(logDir, "main.log"), `[${new Date().toISOString()}] ${message}\n${detail}\n`);
+  } catch {
+    // Logging must never become the reason the app fails.
+  }
+}
+
 process.on("uncaughtException", (error) => {
+  writeLog("Uncaught main process error", error);
   console.error("Uncaught main process error:", error);
 });
 
 process.on("unhandledRejection", (error) => {
+  writeLog("Unhandled main process rejection", error);
   console.error("Unhandled main process rejection:", error);
 });
 
@@ -68,6 +82,7 @@ ipcMain.handle("capture:screen", async () => {
 
   const primarySource = sources[0];
   if (!primarySource) throw new Error("No screen source available.");
+  if (primarySource.thumbnail.isEmpty()) throw new Error("Screen capture returned an empty image.");
 
   return {
     dataUrl: primarySource.thumbnail.toDataURL(),
@@ -99,12 +114,16 @@ ipcMain.handle("ocr:recognize", async (_event, dataUrl) => {
   let worker;
 
   try {
+    const image = nativeImage.createFromDataURL(dataUrl);
+    if (image.isEmpty()) throw new Error("OCR received an empty image.");
+    const pngBuffer = image.toPNG();
+
     worker = await createWorker("eng+chi_tra", undefined, {
       cachePath: path.join(app.getPath("userData"), "tesseract-cache"),
       langPath: path.join(appRoot, "assets", "ocr")
     });
 
-    const result = await worker.recognize(dataUrl);
+    const result = await worker.recognize(pngBuffer);
     const words = result.data.words ?? [];
 
     return words
@@ -120,6 +139,9 @@ ipcMain.handle("ocr:recognize", async (_event, dataUrl) => {
           height: word.bbox.y1 - word.bbox.y0
         }
       }));
+  } catch (error) {
+    writeLog("OCR recognition failed", error);
+    throw error;
   } finally {
     if (worker) await worker.terminate();
   }

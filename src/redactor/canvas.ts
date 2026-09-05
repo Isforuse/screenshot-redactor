@@ -39,18 +39,57 @@ export function drawSample(canvas: HTMLCanvasElement, sample: SampleItem, detect
   }
 }
 
+function loadImage(imageUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image could not be loaded."));
+    image.src = imageUrl;
+  });
+}
+
+export function sampleToImageUrl(sample: SampleItem, detections: Detection[] = [], redacted = false) {
+  const canvas = document.createElement("canvas");
+  drawSample(canvas, sample, detections, redacted);
+  return canvas.toDataURL("image/png");
+}
 
 export async function drawImageUrl(canvas: HTMLCanvasElement, imageUrl: string) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const image = new Image();
-  image.src = imageUrl;
-  await image.decode();
+  const image = await loadImage(imageUrl);
 
   canvas.width = image.naturalWidth;
   canvas.height = image.naturalHeight;
   ctx.drawImage(image, 0, 0);
+}
+
+export async function cropImageDataUrl(imageUrl: string, left: number, top: number, width: number, height: number) {
+  const source = await loadImage(imageUrl);
+  const canvas = document.createElement("canvas");
+  const cropWidth = Math.max(1, Math.round(width));
+  const cropHeight = Math.max(1, Math.round(height));
+  canvas.width = cropWidth;
+  canvas.height = cropHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Cannot create image canvas.");
+  ctx.drawImage(source, left, top, width, height, 0, 0, cropWidth, cropHeight);
+  return canvas.toDataURL("image/png");
+}
+
+export async function renderMarkedImage(imageUrl: string, detections: Detection[]) {
+  const canvas = document.createElement("canvas");
+  await drawImageUrl(canvas, imageUrl);
+  drawDetectionBoxes(canvas, detections);
+  return canvas.toDataURL("image/png");
+}
+
+export async function renderRedactedImage(imageUrl: string, detections: Detection[]) {
+  const canvas = document.createElement("canvas");
+  await drawImageUrl(canvas, imageUrl);
+  redactCanvas(canvas, detections);
+  return canvas.toDataURL("image/png");
 }
 
 export function drawDetectionBoxes(canvas: HTMLCanvasElement, detections: Detection[]) {

@@ -1,6 +1,6 @@
 import { Check, Copy, Download, Eye, FileImage, MousePointer2, ShieldCheck, TestTube2, Upload, X } from "lucide-react";
-import { ChangeEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
-import { drawDetectionBoxes, drawImageUrl, drawSample, redactCanvas } from "./redactor/canvas";
+import { ChangeEvent, PointerEvent, useEffect, useMemo, useState } from "react";
+import { cropImageDataUrl, renderMarkedImage, renderRedactedImage, sampleToImageUrl } from "./redactor/canvas";
 import { calculateMetrics, detectSensitiveText, detectTextBoxes } from "./redactor/detector";
 import { samples } from "./redactor/samples";
 import type { Detection, SampleItem, TextBox } from "./redactor/types";
@@ -10,44 +10,44 @@ type Selection = { startX: number; startY: number; endX: number; endY: number };
 
 export function App() {
   const [sampleId, setSampleId] = useState(samples[0].id);
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [captureImage, setCaptureImage] = useState<CaptureImage | null>(null);
   const [captureSelection, setCaptureSelection] = useState<Selection | null>(null);
-  const [capturedCrop, setCapturedCrop] = useState<string | null>(null);
+  const [activeImage, setActiveImage] = useState<string | null>(null);
+  const [activeSource, setActiveSource] = useState<"capture" | "upload" | "sample" | null>(null);
+  const [markedPreview, setMarkedPreview] = useState<string | null>(null);
+  const [redactedPreview, setRedactedPreview] = useState<string | null>(null);
   const [ocrTextBoxes, setOcrTextBoxes] = useState<TextBox[]>([]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [developerMode, setDeveloperMode] = useState(false);
   const [statusMessage, setStatusMessage] = useState("開啟後會直接擷取目前畫面，選取範圍後先預覽再複製。");
   const [detections, setDetections] = useState<Detection[]>([]);
-  const [hasProcessed, setHasProcessed] = useState(false);
-  const sourceCanvasRef = useRef<HTMLCanvasElement>(null);
-  const markedCanvasRef = useRef<HTMLCanvasElement>(null);
-  const resultCanvasRef = useRef<HTMLCanvasElement>(null);
-  const developerResultCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const sample = useMemo<SampleItem>(() => samples.find((item) => item.id === sampleId) ?? samples[0], [sampleId]);
   const metrics = useMemo(() => calculateMetrics(sample, detections), [sample, detections]);
-  const previewImage = capturedCrop ?? uploadedImage;
 
   useEffect(() => {
-    const resultCanvases = [resultCanvasRef.current, developerResultCanvasRef.current].filter(Boolean) as HTMLCanvasElement[];
-    const markedCanvases = [markedCanvasRef.current, sourceCanvasRef.current].filter(Boolean) as HTMLCanvasElement[];
+    let cancelled = false;
 
-    if (previewImage) {
-      for (const canvas of markedCanvases) {
-        void drawImageUrl(canvas, previewImage).then(() => drawDetectionBoxes(canvas, detections));
-      }
-      for (const canvas of resultCanvases) {
-        void drawImageUrl(canvas, previewImage).then(() => redactCanvas(canvas, detections));
-      }
+    if (!activeImage) {
       return;
     }
 
-    if (sourceCanvasRef.current) drawSample(sourceCanvasRef.current, sample);
-    if (markedCanvasRef.current) drawSample(markedCanvasRef.current, sample, detections, false);
-    for (const canvas of resultCanvases) drawSample(canvas, sample, detections, hasProcessed);
-  }, [sample, detections, hasProcessed, previewImage]);
+    void Promise.all([renderMarkedImage(activeImage, detections), renderRedactedImage(activeImage, detections)])
+      .then(([marked, redacted]) => {
+        if (cancelled) return;
+        setMarkedPreview(marked);
+        setRedactedPreview(redacted);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setStatusMessage(error instanceof Error ? `預覽產生失敗：${error.message}` : "預覽產生失敗。");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeImage, detections]);
 
   useEffect(() => {
     if (window.screenshotRedactor) void startDesktopCapture();
@@ -55,9 +55,10 @@ export function App() {
 
   function processSample() {
     const nextDetections = detectSensitiveText(sample);
+    setActiveImage(sampleToImageUrl(sample));
+    setActiveSource("sample");
     setOcrTextBoxes(sample.textBoxes);
     setDetections(nextDetections);
-    setHasProcessed(true);
     setStatusMessage("樣本已完成辨識與遮蔽。");
   }
 
@@ -70,7 +71,6 @@ export function App() {
       const nextDetections = detectTextBoxes(textBoxes);
       setOcrTextBoxes(textBoxes);
       setDetections(nextDetections);
-      setHasProcessed(true);
       setStatusMessage(
         nextDetections.length > 0
           ? `已標示 ${nextDetections.filter((item) => item.action === "redact").length} 個將打碼區域。確認後才會寫入剪貼簿。`
@@ -94,11 +94,12 @@ export function App() {
     const nextCapture = await window.screenshotRedactor.captureScreen();
     setCaptureImage(nextCapture);
     setCaptureSelection(null);
-    setCapturedCrop(null);
-    setUploadedImage(null);
+    setActiveImage(null);
+    setActiveSource(null);
+    setMarkedPreview(null);
+    setRedactedPreview(null);
     setOcrTextBoxes([]);
     setDetections([]);
-    setHasProcessed(false);
     setStatusMessage("拖曳選取截圖範圍，放開後會進入 OCR 與預覽。");
   }
 
@@ -110,19 +111,9 @@ export function App() {
     const height = Math.abs(captureSelection.endY - captureSelection.startY);
     if (width < 12 || height < 12) return;
 
-    const source = new Image();
-    source.src = captureImage.dataUrl;
-    await source.decode();
-
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(width);
-    canvas.height = Math.round(height);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(source, left, top, width, height, 0, 0, width, height);
-
-    const crop = canvas.toDataURL("image/png");
-    setCapturedCrop(crop);
+    const crop = await cropImageDataUrl(captureImage.dataUrl, left, top, width, height);
+    setActiveImage(crop);
+    setActiveSource("capture");
     setCaptureImage(null);
     setCaptureSelection(null);
     await window.screenshotRedactor?.showPreviewWindow();
@@ -139,15 +130,13 @@ export function App() {
   }
 
   async function copyResultImage() {
-    const canvas = resultCanvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL("image/png");
+    if (!redactedPreview) return;
     if (window.screenshotRedactor) {
-      await window.screenshotRedactor.copyImage(dataUrl);
+      await window.screenshotRedactor.copyImage(redactedPreview);
       setStatusMessage("遮蔽後圖片已寫入剪貼簿。");
       return;
     }
-    await navigator.clipboard.writeText(dataUrl);
+    await navigator.clipboard.writeText(redactedPreview);
     setStatusMessage("瀏覽器模式已複製圖片 data URL。");
   }
 
@@ -155,29 +144,28 @@ export function App() {
     setSampleId(nextId);
     setDetections([]);
     setOcrTextBoxes([]);
-    setHasProcessed(false);
-    setUploadedImage(null);
-    setCapturedCrop(null);
+    setActiveImage(null);
+    setActiveSource(null);
+    setMarkedPreview(null);
+    setRedactedPreview(null);
   }
 
   async function uploadImage(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     const imageUrl = URL.createObjectURL(file);
-    setUploadedImage(imageUrl);
-    setCapturedCrop(null);
+    setActiveImage(imageUrl);
+    setActiveSource("upload");
     setDetections([]);
     setOcrTextBoxes([]);
-    setHasProcessed(false);
     await processImage(imageUrl);
   }
 
   function downloadResult() {
-    const canvas = resultCanvasRef.current;
-    if (!canvas) return;
+    if (!redactedPreview) return;
     const link = document.createElement("a");
-    link.download = `redacted-${previewImage ? "capture" : sample.id}.png`;
-    link.href = canvas.toDataURL("image/png");
+    link.download = `redacted-${activeSource ?? "image"}.png`;
+    link.href = redactedPreview;
     link.click();
   }
 
@@ -275,20 +263,28 @@ export function App() {
             <FileImage aria-hidden="true" />
             <h2>將打碼</h2>
           </div>
-          <canvas data-testid="marked-canvas" ref={markedCanvasRef} />
+          {markedPreview ? (
+            <img alt="marked redaction preview" data-testid="marked-preview" src={markedPreview} />
+          ) : (
+            <div className="empty-preview">尚未選取截圖範圍</div>
+          )}
         </article>
         <article className="preview-panel result-panel">
           <div className="panel-title">
             <Eye aria-hidden="true" />
             <h2>完成預覽</h2>
           </div>
-          <canvas data-testid="result-canvas" ref={resultCanvasRef} />
+          {redactedPreview ? (
+            <img alt="redacted screenshot preview" data-testid="result-preview" src={redactedPreview} />
+          ) : (
+            <div className="empty-preview">完成截圖後會顯示預覽</div>
+          )}
           <div className="button-row">
-            <button className="primary-button" onClick={copyResultImage} type="button">
+            <button className="primary-button" disabled={!redactedPreview} onClick={copyResultImage} type="button">
               <Check aria-hidden="true" />
               確認並複製
             </button>
-            <button className="secondary-button" onClick={downloadResult} type="button">
+            <button className="secondary-button" disabled={!redactedPreview} onClick={downloadResult} type="button">
               <Download aria-hidden="true" />
               儲存圖片
             </button>
@@ -304,14 +300,14 @@ export function App() {
                 <FileImage aria-hidden="true" />
                 <h2>打碼前標示</h2>
               </div>
-              {uploadedImage ? <img alt="uploaded screenshot" src={uploadedImage} /> : <canvas ref={sourceCanvasRef} />}
+              {markedPreview ? <img alt="developer marked screenshot" src={markedPreview} /> : <div className="empty-preview">尚未產生圖片</div>}
             </article>
             <article className="preview-panel">
               <div className="panel-title">
                 <Eye aria-hidden="true" />
                 <h2>遮蔽後</h2>
               </div>
-              <canvas ref={developerResultCanvasRef} />
+              {redactedPreview ? <img alt="developer redacted screenshot" src={redactedPreview} /> : <div className="empty-preview">尚未產生圖片</div>}
             </article>
           </section>
 

@@ -31,6 +31,11 @@ button,
   font-weight: 750;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 button svg,
 .file-button svg {
   width: 18px;
@@ -207,6 +212,17 @@ canvas,
   border: 1px solid #dbe3ee;
   border-radius: 6px;
   background: #f8fafc;
+}
+
+.empty-preview {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  border: 1px solid #dbe3ee;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #64748b;
+  font-weight: 700;
 }
 
 .metrics-grid {
